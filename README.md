@@ -5,6 +5,9 @@
 A production-ready, enterprise-grade chat application showcasing modern DevOps practices and cloud-native architecture. This project demonstrates end-to-end CI/CD pipelines, infrastructure as code, container orchestration, and comprehensive observability.
 
 ## 🏗️ Architecture Overview
+
+![Architecture Diagram](./architecture-diagram.png)
+
 Our application follows a microservices architecture with complete separation of concerns and enterprise-grade DevOps practices:
 
 ### Application Layer
