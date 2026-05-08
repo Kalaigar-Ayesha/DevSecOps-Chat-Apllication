@@ -42,6 +42,7 @@ service:
   mongoPort: 27017
 
 secrets:
+  create: false
   mongodbUri: mongodb://chat-app-chat-app-mongo:27017/chat-app
   jwtSecret: supersecret
   clientUrl: http://chatapp-prod.local
