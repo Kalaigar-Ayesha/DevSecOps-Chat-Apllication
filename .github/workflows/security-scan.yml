@@ -1,0 +1,29 @@
+name: Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: 'Name of the docker image'
+        required: true
+        type: string
+      tag:
+        description: 'Tag for the docker image'
+        required: true
+        type: string
+
+jobs:
+  scan:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.image_name }}:${{ inputs.tag }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'

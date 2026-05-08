@@ -2,11 +2,13 @@
 
 ## Chat Application Architecture
 
-A production-ready, enterprise-grade chat application showcasing modern DevOps practices and cloud-native architecture. This project demonstrates end-to-end CI/CD pipelines, infrastructure as code, container orchestration, and comprehensive observability.
+A production-ready, enterprise-grade chat application showcasing modern cloud-native DevSecOps practices. This project serves as a comprehensive platform demonstrating GitOps-driven Kubernetes-native deployments, GitHub Actions CI/CD pipelines, Infrastructure as Code, and an observability-first architecture.
 
 ## 🏗️ Architecture Overview
 
 ![Architecture Diagram](./architecture-diagram.png)
+
+> **Note**: *The architecture diagram above visually represents the legacy Jenkins CI. The repository has since migrated to use **GitHub Actions** natively as the primary CI/CD platform.*
 
 Our application follows a microservices architecture with complete separation of concerns and enterprise-grade DevOps practices:
 
@@ -18,7 +20,7 @@ Our application follows a microservices architecture with complete separation of
 
 ### CI/CD Pipeline
 - **GitHub Repository** - Source code management and version control
-- **Jenkins CI Pipeline** - Automated testing, building, and security scanning
+- **GitHub Actions** - Primary CI/CD for automated testing, Docker builds, and security scanning
 - **Docker Hub** - Container registry for image distribution
 - Multi-environment deployments (Staging/Production)
 
@@ -60,7 +62,7 @@ Our application follows a microservices architecture with complete separation of
 ### DevOps & Infrastructure
 - Docker - Containerization
 - Kubernetes - Container orchestration
-- Jenkins - CI/CD pipeline automation
+- GitHub Actions - CI/CD pipeline automation
 - ArgoCD - GitOps deployment
 - Terraform - Infrastructure as Code
 - Helm - Kubernetes package management

@@ -1,0 +1,76 @@
+name: Deploy Prod
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  frontend-ci:
+    uses: ./.github/workflows/frontend-ci.yml
+
+  backend-ci:
+    uses: ./.github/workflows/backend-ci.yml
+
+  build-frontend:
+    needs: frontend-ci
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      context: ./frontend
+      image_name: kayesha01/chat-app-frontend
+      tag: ${{ github.sha }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  build-backend:
+    needs: backend-ci
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      context: ./backend
+      image_name: kayesha01/chat-app-backend
+      tag: ${{ github.sha }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  scan-frontend:
+    needs: build-frontend
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      image_name: kayesha01/chat-app-frontend
+      tag: ${{ github.sha }}
+
+  scan-backend:
+    needs: build-backend
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      image_name: kayesha01/chat-app-backend
+      tag: ${{ github.sha }}
+
+  update-manifests:
+    name: GitOps Production Update
+    needs: [scan-frontend, scan-backend]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup yq
+        uses: mikefarah/yq@master
+
+      - name: Update Helm values
+        run: |
+          yq eval '.backend.tag = "${{ github.sha }}"' -i Helm/values.yaml
+          yq eval '.frontend.tag = "${{ github.sha }}"' -i Helm/values.yaml
+          
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Helm/values.yaml
+          git commit -m "chore(gitops): update prod image tags to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
+          git push origin main
