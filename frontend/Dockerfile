@@ -11,6 +11,9 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 
+# Patch OS vulnerabilities
+RUN apk update && apk upgrade --no-cache
+
 # Remove default static files
 RUN rm -rf /usr/share/nginx/html/*
 

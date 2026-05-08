@@ -2,6 +2,9 @@
 # Use Node's official image for a small runtime environment
 FROM node:18-alpine
 
+# Patch OS vulnerabilities
+RUN apk update && apk upgrade --no-cache
+
 # Create app directory
 WORKDIR /app
 
