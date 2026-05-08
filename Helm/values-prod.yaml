@@ -1,0 +1,34 @@
+global:
+  environment: prod
+
+backend:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+frontend:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  cpuUtilization: 70
+
+ingress:
+  host: chatapp-prod.local
+
+secrets:
+  clientUrl: https://chatapp-prod.local

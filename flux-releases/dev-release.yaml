@@ -1,0 +1,31 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: GitRepository
+metadata:
+  name: chat-app-repo-dev
+  namespace: flux-system
+spec:
+  interval: 1m0s
+  url: https://github.com/Kalaigar-Ayesha/DevSecOps-Chat-Apllication.git
+  ref:
+    branch: develop
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: chat-app-dev
+  namespace: flux-system
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: ./Helm
+      sourceRef:
+        kind: GitRepository
+        name: chat-app-repo-dev
+      interval: 1m
+  targetNamespace: chat-app-dev
+  install:
+    createNamespace: true
+  valuesFiles:
+    - values.yaml
+    - values-dev.yaml

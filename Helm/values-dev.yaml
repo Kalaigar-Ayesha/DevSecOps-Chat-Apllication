@@ -1,0 +1,31 @@
+global:
+  environment: dev
+
+backend:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+frontend:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  host: dev.chatapp.local
+
+secrets:
+  clientUrl: http://dev.chatapp.local
