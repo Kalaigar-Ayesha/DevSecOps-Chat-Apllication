@@ -1,0 +1,356 @@
+---
+# Jaeger Distributed Tracing Deployment
+# Complete Jaeger stack for MERN application
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tracing
+  labels:
+    name: tracing
+
+---
+# Jaeger All-in-One Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: tracing
+  labels:
+    app: jaeger
+    component: all-in-one
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+      component: all-in-one
+  template:
+    metadata:
+      labels:
+        app: jaeger
+        component: all-in-one
+    spec:
+      containers:
+      - name: jaeger
+        image: jaegertracing/all-in-one:1.50
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 16686
+          name: ui
+          protocol: TCP
+        - containerPort: 14268
+          name: http-collector
+          protocol: TCP
+        - containerPort: 14250
+          name: grpc-collector
+          protocol: TCP
+        - containerPort: 6831
+          name: udp-agent-compact
+          protocol: UDP
+        - containerPort: 6832
+          name: udp-agent-binary
+          protocol: UDP
+        env:
+        - name: SPAN_STORAGE_TYPE
+          value: memory
+        - name: COLLECTOR_ZIPKIN_HTTP_PORT
+          value: "9411"
+        - name: QUERY_BASE_PATH
+          value: /
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 16686
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 16686
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+# Jaeger UI Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-ui
+  namespace: tracing
+  labels:
+    app: jaeger
+    component: ui
+spec:
+  type: ClusterIP
+  ports:
+  - port: 16686
+    targetPort: 16686
+    name: ui
+    protocol: TCP
+  selector:
+    app: jaeger
+    component: all-in-one
+
+---
+# Jaeger Collector Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector
+  namespace: tracing
+  labels:
+    app: jaeger
+    component: collector
+spec:
+  type: ClusterIP
+  ports:
+  - port: 14268
+    targetPort: 14268
+    name: http-collector
+    protocol: TCP
+  - port: 14250
+    targetPort: 14250
+    name: grpc-collector
+    protocol: TCP
+  selector:
+    app: jaeger
+    component: all-in-one
+
+---
+# Jaeger Agent Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-agent
+  namespace: tracing
+  labels:
+    app: jaeger
+    component: agent
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6831
+    targetPort: 6831
+    name: udp-agent-compact
+    protocol: UDP
+  - port: 6832
+    targetPort: 6832
+    name: udp-agent-binary
+    protocol: UDP
+  selector:
+    app: jaeger
+    component: all-in-one
+
+---
+# Jaeger Ingress (Optional - for external access)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jaeger-ingress
+  namespace: tracing
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: jaeger.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jaeger-ui
+            port:
+              number: 16686
+
+---
+# OpenTelemetry Collector Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: tracing
+  labels:
+    app: otel-collector
+    component: collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+      component: collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+        component: collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.88.0
+        command:
+        - "/otelcol-contrib"
+        - "--config=/conf/otel-collector-config.yaml"
+        volumeMounts:
+        - name: config
+          mountPath: /conf
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318
+          name: otlp-http
+          protocol: TCP
+        - containerPort: 8888
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+---
+# OpenTelemetry Collector ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: tracing
+  labels:
+    app: otel-collector
+    component: collector
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 512
+      
+      resource:
+        attributes:
+        - key: environment
+          value: production
+          action: upsert
+        - key: service.name
+          value: chat-app-backend
+          action: upsert
+    
+    exporters:
+      jaeger:
+        endpoint: jaeger-collector:14250
+        tls:
+          insecure: true
+      
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: "otel"
+    
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, resource]
+          exporters: [jaeger]
+        
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus]
+
+---
+# OpenTelemetry Collector Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: tracing
+  labels:
+    app: otel-collector
+    component: collector
+spec:
+  type: ClusterIP
+  ports:
+  - port: 4317
+    targetPort: 4317
+    name: otlp-grpc
+    protocol: TCP
+  - port: 4318
+    targetPort: 4318
+    name: otlp-http
+    protocol: TCP
+  - port: 8888
+    targetPort: 8888
+    name: metrics
+    protocol: TCP
+  selector:
+    app: otel-collector
+    component: collector
+
+---
+# Jaeger ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jaeger-metrics
+  namespace: tracing
+  labels:
+    app: jaeger
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: jaeger
+  namespaceSelector:
+    matchNames:
+    - tracing
+  endpoints:
+  - port: 16686
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# OpenTelemetry ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector-metrics
+  namespace: tracing
+  labels:
+    app: otel-collector
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  namespaceSelector:
+    matchNames:
+    - tracing
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
