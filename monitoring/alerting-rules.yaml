@@ -1,0 +1,305 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: chat-app-alerting-rules
+  namespace: monitoring
+  labels:
+    app: chat-app
+    release: monitoring
+spec:
+  groups:
+  - name: chat-app.rules
+    rules:
+    # High CPU Usage Alerts
+    - alert: ChatAppHighCPUUsage
+      expr: sum(rate(container_cpu_usage_seconds_total{pod=~"chat-app-backend.*|chat-app-frontend.*"}[5m])) by (pod) > 0.8
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "High CPU usage detected in Chat App pod {{ $labels.pod }}"
+        description: "CPU usage is above 80% for pod {{ $labels.pod }} for more than 2 minutes. Current value: {{ $value }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/hightcpuusage"
+
+    - alert: ChatAppCriticalCPUUsage
+      expr: sum(rate(container_cpu_usage_seconds_total{pod=~"chat-app-backend.*|chat-app-frontend.*"}[5m])) by (pod) > 0.95
+      for: 1m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Critical CPU usage detected in Chat App pod {{ $labels.pod }}"
+        description: "CPU usage is above 95% for pod {{ $labels.pod }} for more than 1 minute. Current value: {{ $value }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/hightcpuusage"
+
+    # High Memory Usage Alerts
+    - alert: ChatAppHighMemoryUsage
+      expr: sum(container_memory_working_set_bytes{pod=~"chat-app-backend.*|chat-app-frontend.*"}) by (pod) / sum(container_spec_memory_limit_bytes{pod=~"chat-app-backend.*|chat-app-frontend.*"}) by (pod) > 0.8
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "High memory usage detected in Chat App pod {{ $labels.pod }}"
+        description: "Memory usage is above 80% for pod {{ $labels.pod }} for more than 2 minutes. Current value: {{ $value | humanizePercentage }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/highmemoryusage"
+
+    - alert: ChatAppCriticalMemoryUsage
+      expr: sum(container_memory_working_set_bytes{pod=~"chat-app-backend.*|chat-app-frontend.*"}) by (pod) / sum(container_spec_memory_limit_bytes{pod=~"chat-app-backend.*|chat-app-frontend.*"}) by (pod) > 0.95
+      for: 1m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Critical memory usage detected in Chat App pod {{ $labels.pod }}"
+        description: "Memory usage is above 95% for pod {{ $labels.pod }} for more than 1 minute. Current value: {{ $value | humanizePercentage }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/highmemoryusage"
+
+    # Pod Failure Alerts
+    - alert: ChatAppPodRestartHigh
+      expr: sum(rate(kube_pod_container_status_restarts_total{namespace=~"chat-app|default", pod=~"chat-app.*"}[5m])) by (pod) > 0
+      for: 0m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Chat App pod {{ $labels.pod }} is restarting"
+        description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 5 minutes"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/podrestartshigh"
+
+    - alert: ChatAppPodNotReady
+      expr: kube_pod_status_ready{condition="true", namespace=~"chat-app|default", pod=~"chat-app.*"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Chat App pod {{ $labels.pod }} is not ready"
+        description: "Pod {{ $labels.pod }} has been not ready for more than 1 minute"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/podnotready"
+
+    - alert: ChatAppPodCrashLooping
+      expr: rate(kube_pod_container_status_restarts_total{namespace=~"chat-app|default", pod=~"chat-app.*"}[15m]) > 0
+      for: 5m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Chat App pod {{ $labels.pod }} is crash looping"
+        description: "Pod {{ $labels.pod }} has been restarting {{ $value }} times in the last 15 minutes"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/podcrashlooping"
+
+    # High Latency Alerts
+    - alert: ChatAppHighLatency
+      expr: histogram_quantile(0.95, sum(rate(chat_app_http_request_duration_seconds_bucket[5m])) by (le, method, path)) > 1
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "High latency detected in Chat App"
+        description: "95th percentile latency is {{ $value }}s for {{ $labels.method }} {{ $labels.path }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/highlatency"
+
+    - alert: ChatAppCriticalLatency
+      expr: histogram_quantile(0.95, sum(rate(chat_app_http_request_duration_seconds_bucket[5m])) by (le, method, path)) > 2
+      for: 1m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Critical latency detected in Chat App"
+        description: "95th percentile latency is {{ $value }}s for {{ $labels.method }} {{ $labels.path }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/highlatency"
+
+    # Container Crash Alerts
+    - alert: ChatAppContainerCrash
+      expr: kube_pod_container_status_terminated_reason{reason="Error", namespace=~"chat-app|default", pod=~"chat-app.*"} == 1
+      for: 0m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Chat App container {{ $labels.container }} in pod {{ $labels.pod }} has crashed"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} terminated with error"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/containercrash"
+
+    - alert: ChatAppContainerOOMKilled
+      expr: kube_pod_container_status_terminated_reason{reason="OOMKilling", namespace=~"chat-app|default", pod=~"chat-app.*"} == 1
+      for: 0m
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Chat App container {{ $labels.container }} in pod {{ $labels.pod }} was OOM killed"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was terminated due to out of memory"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/containeroomkilled"
+
+    # Application-specific Alerts
+    - alert: ChatAppHighErrorRate
+      expr: sum(rate(chat_app_http_requests_total{status=~"5.."}[5m])) / sum(rate(chat_app_http_requests_total[5m])) > 0.1
+      for: 1m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "High error rate detected in Chat App"
+        description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/higherrorrate"
+
+    - alert: ChatAppCriticalErrorRate
+      expr: sum(rate(chat_app_http_requests_total{status=~"5.."}[5m])) / sum(rate(chat_app_http_requests_total[5m])) > 0.2
+      for: 30s
+      labels:
+        severity: critical
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "Critical error rate detected in Chat App"
+        description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/higherrorrate"
+
+    - alert: ChatAppNoRequests
+      expr: sum(rate(chat_app_http_requests_total[5m])) == 0
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "No requests detected in Chat App"
+        description: "No HTTP requests have been received in the last 2 minutes"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/norequests"
+
+    - alert: ChatAppWebSocketConnectionsHigh
+      expr: sum(chat_app_websocket_active_connections) > 1000
+      for: 5m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "High number of WebSocket connections"
+        description: "WebSocket connections count is {{ $value }}, which is above the threshold of 1000"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/highwebsocketconnections"
+
+    - alert: ChatAppDatabaseConnectionsHigh
+      expr: sum(chat_app_database_connections_active) > 80
+      for: 5m
+      labels:
+        severity: warning
+        service: chat-app
+        component: backend
+      annotations:
+        summary: "High number of database connections"
+        description: "Database connections count is {{ $value }}, which is above the threshold of 80"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/application/highdatabaseconnections"
+
+    # Infrastructure Alerts
+    - alert: ChatAppNodeHighCPUUsage
+      expr: sum(rate(container_cpu_usage_seconds_total{container!=\"POD\", container!=\"\"}[5m])) by (node) / sum(machine_cpu_cores) by (node) > 0.8
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: infrastructure
+      annotations:
+        summary: "High CPU usage on node {{ $labels.node }}"
+        description: "CPU usage is above 80% on node {{ $labels.node }} for more than 2 minutes. Current value: {{ $value | humanizePercentage }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/nodehighcpuusage"
+
+    - alert: ChatAppNodeHighMemoryUsage
+      expr: sum(container_memory_working_set_bytes{container!=\"POD\", container!=\"\"}) by (node) / sum(machine_memory_bytes) by (node) > 0.85
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: infrastructure
+      annotations:
+        summary: "High memory usage on node {{ $labels.node }}"
+        description: "Memory usage is above 85% on node {{ $labels.node }} for more than 2 minutes. Current value: {{ $value | humanizePercentage }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/nodehighmemoryusage"
+
+    - alert: ChatAppNodeDiskUsageHigh
+      expr: (sum(node_filesystem_size_bytes{fstype!=\"tmpfs\"}) by (node) - sum(node_filesystem_avail_bytes{fstype!=\"tmpfs\"}) by (node)) / sum(node_filesystem_size_bytes{fstype!=\"tmpfs\"}) by (node) > 0.85
+      for: 5m
+      labels:
+        severity: warning
+        service: chat-app
+        component: infrastructure
+      annotations:
+        summary: "High disk usage on node {{ $labels.node }}"
+        description: "Disk usage is above 85% on node {{ $labels.node }} for more than 5 minutes. Current value: {{ $value | humanizePercentage }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/nodediskusagehigh"
+
+    # Kubernetes API Server Alerts
+    - alert: ChatAppKubernetesAPIServerDown
+      expr: up{job="kubernetes-apiservers"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: chat-app
+        component: infrastructure
+      annotations:
+        summary: "Kubernetes API server is down"
+        description: "Kubernetes API server {{ $labels.instance }} is down"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubernetesapiserverdown"
+
+    - alert: ChatAppKubernetesAPIServerLatencyHigh
+      expr: histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job="kubernetes-apiservers"}[5m])) by (le, instance)) > 1
+      for: 2m
+      labels:
+        severity: warning
+        service: chat-app
+        component: infrastructure
+      annotations:
+        summary: "High latency on Kubernetes API server {{ $labels.instance }}"
+        description: "99th percentile latency is {{ $value }}s on Kubernetes API server {{ $labels.instance }}"
+        runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubernetesapiserverlatencyhigh"
+
+  - name: chat-app-recording-rules
+    rules:
+    # Recording rules for better performance
+    - record: chat_app:http_requests:rate5m
+      expr: sum(rate(chat_app_http_requests_total[5m])) by (method, status, path)
+
+    - record: chat_app:http_request_duration_seconds:histogram_quantile_95
+      expr: histogram_quantile(0.95, sum(rate(chat_app_http_request_duration_seconds_bucket[5m])) by (le, method, path))
+
+    - record: chat_app:http_request_duration_seconds:histogram_quantile_50
+      expr: histogram_quantile(0.50, sum(rate(chat_app_http_request_duration_seconds_bucket[5m])) by (le, method, path))
+
+    - record: chat_app:error_rate:5m
+      expr: sum(rate(chat_app_http_requests_total{status=~"5.."}[5m])) / sum(rate(chat_app_http_requests_total[5m]))
+
+    - record: chat_app:websocket_connections:total
+      expr: sum(chat_app_websocket_active_connections)
+
+    - record: chat_app:database_connections:total
+      expr: sum(chat_app_database_connections_active)
+
+    - record: chat_app:messages:rate5m
+      expr: sum(rate(chat_app_messages_total[5m])) by (direction)
+
+    - record: chat_app:container_cpu_usage:rate5m
+      expr: sum(rate(container_cpu_usage_seconds_total{pod=~"chat-app.*"}[5m])) by (pod, container)
+
+    - record: chat_app:container_memory_usage:bytes
+      expr: sum(container_memory_working_set_bytes{pod=~"chat-app.*"}) by (pod, container)
+
+    - record: chat_app:pod_restarts:rate5m
+      expr: sum(rate(kube_pod_container_status_restarts_total{namespace=~"chat-app|default", pod=~"chat-app.*"}[5m])) by (pod)

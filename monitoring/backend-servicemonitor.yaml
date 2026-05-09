@@ -1,0 +1,244 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-app-backend-metrics
+  namespace: monitoring
+  labels:
+    app: chat-app-backend
+    release: monitoring
+    component: backend
+spec:
+  selector:
+    matchLabels:
+      app: chat-app-backend
+  namespaceSelector:
+    matchNames:
+    - chat-app
+    - default
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'http_requests_total'
+      targetLabel: __name__
+      replacement: 'chat_app_http_requests_total'
+    - sourceLabels: [__name__]
+      regex: 'http_request_duration_seconds'
+      targetLabel: __name__
+      replacement: 'chat_app_http_request_duration_seconds'
+    - sourceLabels: [__name__]
+      regex: 'websocket_active_connections'
+      targetLabel: __name__
+      replacement: 'chat_app_websocket_active_connections'
+    - sourceLabels: [__name__]
+      regex: 'messages_total'
+      targetLabel: __name__
+      replacement: 'chat_app_messages_total'
+    - sourceLabels: [__name__]
+      regex: 'database_connections_active'
+      targetLabel: __name__
+      replacement: 'chat_app_database_connections_active'
+    - sourceLabels: [__name__]
+      regex: 'user_registrations_total'
+      targetLabel: __name__
+      replacement: 'chat_app_user_registrations_total'
+    - sourceLabels: [__name__]
+      regex: 'user_logins_total'
+      targetLabel: __name__
+      replacement: 'chat_app_user_logins_total'
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      targetLabel: __metrics_path__
+      regex: (.+)
+    - sourceLabels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      targetLabel: __address__
+    - action: labelmap
+      regex: __meta_kubernetes_pod_label_(.+)
+    - sourceLabels: [__meta_kubernetes_namespace]
+      action: replace
+      targetLabel: kubernetes_namespace
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      action: replace
+      targetLabel: kubernetes_pod_name
+    - sourceLabels: [__meta_kubernetes_pod_phase]
+      action: replace
+      targetLabel: kubernetes_pod_phase
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-app-frontend-metrics
+  namespace: monitoring
+  labels:
+    app: chat-app-frontend
+    release: monitoring
+    component: frontend
+spec:
+  selector:
+    matchLabels:
+      app: chat-app-frontend
+  namespaceSelector:
+    matchNames:
+    - chat-app
+    - default
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      targetLabel: __metrics_path__
+      regex: (.+)
+    - sourceLabels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      targetLabel: __address__
+    - action: labelmap
+      regex: __meta_kubernetes_pod_label_(.+)
+    - sourceLabels: [__meta_kubernetes_namespace]
+      action: replace
+      targetLabel: kubernetes_namespace
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      action: replace
+      targetLabel: kubernetes_pod_name
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-app-mongodb-metrics
+  namespace: monitoring
+  labels:
+    app: chat-app-mongodb
+    release: monitoring
+    component: database
+spec:
+  selector:
+    matchLabels:
+      app: chat-app-mongodb
+  namespaceSelector:
+    matchNames:
+    - chat-app
+    - default
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      targetLabel: __metrics_path__
+      regex: (.+)
+    - sourceLabels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      targetLabel: __address__
+    - action: labelmap
+      regex: __meta_kubernetes_pod_label_(.+)
+    - sourceLabels: [__meta_kubernetes_namespace]
+      action: replace
+      targetLabel: kubernetes_namespace
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      action: replace
+      targetLabel: kubernetes_pod_name
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: chat-app-backend-pods
+  namespace: monitoring
+  labels:
+    app: chat-app-backend
+    release: monitoring
+    component: backend
+spec:
+  selector:
+    matchLabels:
+      app: chat-app-backend
+  namespaceSelector:
+    matchNames:
+    - chat-app
+    - default
+  podMetricsEndpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - sourceLabels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      targetLabel: __metrics_path__
+      regex: (.+)
+    - sourceLabels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      targetLabel: __address__
+    - action: labelmap
+      regex: __meta_kubernetes_pod_label_(.+)
+    - sourceLabels: [__meta_kubernetes_namespace]
+      action: replace
+      targetLabel: kubernetes_namespace
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      action: replace
+      targetLabel: kubernetes_pod_name
+    - sourceLabels: [__meta_kubernetes_pod_phase]
+      action: replace
+      targetLabel: kubernetes_pod_phase
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+  labels:
+    app: kube-state-metrics
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  namespaceSelector:
+    matchNames:
+    - monitoring
+  endpoints:
+  - port: http-metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+  - port: telemetry
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
