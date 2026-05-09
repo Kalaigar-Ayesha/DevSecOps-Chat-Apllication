@@ -6,7 +6,7 @@ A production-ready, enterprise-grade chat application showcasing modern cloud-na
 
 ## 🏗️ Architecture Overview
 
-![Architecture Diagram](./architecture-diagram.png)
+![Architecture Diagram](./diagram.png)
 
 > **Note**: *The architecture diagram above visually represents the legacy Jenkins CI. The repository has since migrated to use **GitHub Actions** natively as the primary CI/CD platform.*
 
