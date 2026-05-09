@@ -31,6 +31,22 @@ jobs:
             echo "No lint script found, skipping."
           fi
 
+  audit:
+    name: Audit Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Audit dependencies
+        working-directory: backend
+        run: npm audit --audit-level=high
+
   test:
     name: Test Backend
     runs-on: ubuntu-latest

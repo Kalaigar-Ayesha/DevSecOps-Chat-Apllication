@@ -13,16 +13,24 @@ spec:
         app: frontend
     spec:
       securityContext:
-        runAsNonRoot: false
-        runAsUser: 0
+        runAsNonRoot: true
+        runAsUser: 101 # nginx-unprivileged user id
+        fsGroup: 101
+
       containers:
         - name: frontend
           image: "{{ .Values.frontend.image }}:{{ .Values.frontend.tag }}"
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
-            - containerPort: {{ .Values.service.frontendPort }}
+            - containerPort: 8080
 
           env:
             - name: REACT_APP_API_URL
@@ -32,11 +40,13 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
+            - name: nginx-tmp
+              mountPath: /tmp
 
           livenessProbe:
             httpGet:
               path: /
-              port: {{ .Values.service.frontendPort }}
+              port: 8080
             initialDelaySeconds: 5
 
           resources:
@@ -46,3 +56,5 @@ spec:
         - name: nginx-config
           configMap:
             name: {{ include "chatapp.fullname" . }}-frontend-config
+        - name: nginx-tmp
+          emptyDir: {}

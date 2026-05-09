@@ -40,6 +40,12 @@ spec:
 
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
 
           ports:
             - containerPort:  {{ .Values.service.backendPort }}
@@ -93,3 +99,11 @@ spec:
 
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}

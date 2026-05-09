@@ -18,6 +18,12 @@ COPY . .
 ENV NODE_ENV=production
 ENV PORT=5000
 
+# Change ownership of the app directory to the node user
+RUN chown -R node:node /app
+
+# Switch to non-root user
+USER node
+
 # Expose port the app listens on
 EXPOSE 5000
 

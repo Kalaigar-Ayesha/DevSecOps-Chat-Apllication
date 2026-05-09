@@ -8,4 +8,5 @@ spec:
     app: frontend
   ports:
     - port: {{ .Values.service.frontendPort }}
-      targetPort: {{ .Values.service.frontendPort }}
+      targetPort: 8080
+      protocol: TCP
