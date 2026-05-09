@@ -1,0 +1,371 @@
+---
+# Production-Grade Ingress Configuration
+# MERN Chat Application with TLS, annotations, and rate limiting
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chat-app-ingress
+  namespace: chat-app
+  annotations:
+    # Ingress controller annotations
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # TLS configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-burst: "200"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "50"
+    nginx.ingress.kubernetes.io/rate-limit-connections-per-ip: "10"
+    
+    # Connection limits
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "15"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+    
+    # Large request handling
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/client-max-body-size: "10m"
+    
+    # CORS and security headers
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/cors-expose-headers: "Content-Length,Content-Range"
+    
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' wss:; frame-ancestors 'self';";
+    
+    # Custom error pages
+    nginx.ingress.kubernetes.io/custom-http-errors: "404,429,500,502,503,504"
+    nginx.ingress.kubernetes.io/default-backend: "chat-app-backend"
+    
+    # Logging and monitoring
+    nginx.ingress.kubernetes.io/log-format-upstream: '$remote_addr - $remote_user [$time_local] $request "$status" $body_bytes_sent "$request_time" "$upstream_addr" "$upstream_response_time" "$upstream_status" "$request_id"';
+    nginx.ingress.kubernetes.io/log-format: '$remote_addr - $remote_user [$time_local] $request "$status" $body_bytes_sent "$request_time" "$request_id"';
+    
+    # Performance optimization
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/enable-opentracing: "true"
+    nginx.ingress.kubernetes.io/jaeger-collector-host: "jaeger-collector.tracing:14268"
+    
+    # Sticky sessions (for WebSocket)
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "chatapp-session"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "3600"
+    
+    # Compression
+    nginx.ingress.kubernetes.io/enable-compression: "true"
+    nginx.ingress.kubernetes.io/compression-level: "5"
+    nginx.ingress.kubernetes.io/compression-min-length: "1000"
+    
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    
+  labels:
+    app: chat-app
+    component: ingress
+    tier: frontend
+
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - chatapp.com
+    - api.chatapp.com
+    secretName: chat-app-tls-secret
+  rules:
+  # Frontend application
+  - host: chatapp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: chat-app-frontend
+            port:
+              number: 80
+  # API backend
+  - host: api.chatapp.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: chat-app-backend
+            port:
+              number: 3000
+      # WebSocket connections
+      - path: /socket.io
+        pathType: Prefix
+        backend:
+          service:
+            name: chat-app-backend
+            port:
+              number: 3000
+
+---
+# TLS Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chat-app-tls-cert
+  namespace: chat-app
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  secretName: chat-app-tls-secret
+  dnsNames:
+  - chatapp.com
+  - api.chatapp.com
+  - "*.chatapp.com"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  secretTemplate:
+    annotations:
+      kubernetes.io/tls-acme: "true"
+  privateKey:
+    rotationPolicy: Always
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days before expiration
+
+---
+# ClusterIssuer for Let's Encrypt
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  annotations:
+    cert-manager.io/cluster-issuer: "true"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@chatapp.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-private-key
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+          name: chat-app-ingress
+          serviceType: ClusterIP
+        selector: {}
+
+---
+# Rate Limiting ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-rate-limit-config
+  namespace: chat-app
+  labels:
+    app: chat-app
+    component: ingress
+data:
+  rate-limit.conf: |
+    # Rate limiting configuration
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=upload:10m rate=2r/m;
+    limit_req_zone $binary_remote_addr zone=websocket:10m rate=20r/s;
+    
+    # Rate limiting rules
+    limit_req_status 429;
+    limit_req_log_level warn;
+    
+    # Connection limiting
+    limit_conn_zone $binary_remote_addr zone=conn_limit_per_ip:10m;
+    limit_conn_zone $server_name zone=conn_limit_per_server:10m;
+    limit_conn_status 429;
+    limit_conn_log_level warn;
+
+---
+# Custom error pages ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-error-pages
+  namespace: chat-app
+  labels:
+    app: chat-app
+    component: ingress
+data:
+  404.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>404 Not Found</title></head>
+    <body>
+      <h1>404 - Page Not Found</h1>
+      <p>The requested page could not be found.</p>
+      <p><a href="/">Return to Chat App</a></p>
+    </body>
+    </html>
+  429.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>429 Too Many Requests</title></head>
+    <body>
+      <h1>429 - Rate Limit Exceeded</h1>
+      <p>You have made too many requests. Please try again later.</p>
+      <p><a href="/">Return to Chat App</a></p>
+    </body>
+    </html>
+  500.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>500 Internal Server Error</title></head>
+    <body>
+      <h1>500 - Internal Server Error</h1>
+      <p>Something went wrong. Please try again later.</p>
+      <p><a href="/">Return to Chat App</a></p>
+    </body>
+    </html>
+
+---
+# Network Policy for Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-app-ingress-netpol
+  namespace: chat-app
+  labels:
+    app: chat-app
+    component: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: chat-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: cert-manager
+    - ipBlock:
+        - cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: chat-app-backend
+    - podSelector:
+        matchLabels:
+          app: chat-app-frontend
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: tracing
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 4317
+    - protocol: TCP
+      port: 14250
+
+---
+# Service Monitor for Ingress Metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nginx-ingress-metrics
+  namespace: chat-app
+  labels:
+    app: chat-app
+    component: ingress
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+  namespaceSelector:
+    matchNames:
+    - ingress-nginx
+  endpoints:
+  - port: metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+
+---
+# PrometheusRule for Ingress Alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nginx-ingress-alerts
+  namespace: chat-app
+  labels:
+    app: chat-app
+    component: ingress
+    release: monitoring
+spec:
+  groups:
+  - name: nginx.rules
+    rules:
+    - alert: NginxHighErrorRate
+      expr: sum(rate(nginx_ingress_controller_requests{status=~"5.."}[5m])) / sum(rate(nginx_ingress_controller_requests[5m])) > 0.05
+      for: 2m
+      labels:
+        severity: warning
+        service: nginx-ingress
+        component: ingress
+      annotations:
+        summary: "High error rate detected in Nginx Ingress"
+        description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+        
+    - alert: NginxHighLatency
+      expr: histogram_quantile(0.95, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket[5m])) by (le, ingress)) > 2
+      for: 5m
+      labels:
+        severity: warning
+        service: nginx-ingress
+        component: ingress
+      annotations:
+        summary: "High latency detected in Nginx Ingress"
+        description: "95th percentile latency is {{ $value }}s"
+        
+    - alert: NginxRateLimitExceeded
+      expr: sum(rate(nginx_ingress_controller_requests{status="429"}[5m])) > 10
+      for: 1m
+      labels:
+        severity: critical
+        service: nginx-ingress
+        component: ingress
+      annotations:
+        summary: "Rate limit exceeded in Nginx Ingress"
+        description: "Rate limit requests are {{ $value }} per second"

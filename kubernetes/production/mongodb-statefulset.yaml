@@ -1,0 +1,526 @@
+---
+# Production-Grade MongoDB StatefulSet
+# MERN Chat Application Database with comprehensive reliability features
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: chat-app
+  labels:
+    app: mongodb
+    component: database
+    tier: data
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+spec:
+  type: ClusterIP
+  ports:
+  - name: mongodb
+    port: 27017
+    targetPort: 27017
+    protocol: TCP
+  selector:
+    app: mongodb
+  clusterIP: None
+  publishNotReadyAddresses: false
+
+---
+# Headless Service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-headless
+  namespace: chat-app
+  labels:
+    app: mongodb
+    component: database
+    tier: data
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: mongodb
+    port: 27017
+    targetPort: 27017
+    protocol: TCP
+  selector:
+    app: mongodb
+  publishNotReadyAddresses: false
+
+---
+# MongoDB StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: chat-app
+  labels:
+    app: mongodb
+    component: database
+    tier: data
+  annotations:
+    description: "MongoDB StatefulSet for Chat Application"
+
+spec:
+  serviceName: mongodb-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mongodb
+      component: database
+      
+  template:
+    metadata:
+      labels:
+        app: mongodb
+        component: database
+        tier: data
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9216"
+        prometheus.io/path: "/metrics"
+        
+    spec:
+      serviceAccountName: mongodb
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        
+      containers:
+      - name: mongodb
+        image: mongo:7.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 27017
+          name: mongodb
+          protocol: TCP
+        - containerPort: 9216
+          name: metrics
+          protocol: TCP
+          
+        # Resource requests and limits
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+            
+        # Environment variables
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: chat-app-secrets
+              key: mongodb-root-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chat-app-secrets
+              key: mongodb-root-password
+        - name: MONGO_INITDB_DATABASE
+          value: "chatapp"
+        - name: MONGO_REPLICA_SET_NAME
+          value: "mongodb-rs"
+        - name: MONGO_REPLICA_SET_HOSTS
+          value: "mongodb-0.mongodb-headless.chat-app.svc.cluster.local:27017,mongodb-1.mongodb-headless.chat-app.svc.cluster.local:27017,mongodb-2.mongodb-headless.chat-app.svc.cluster.local:27017"
+          
+        # Liveness Probe
+        livenessProbe:
+          exec:
+            command:
+            - mongo
+            - --eval
+            - "db.adminCommand('ping').ok"
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+          
+        # Readiness Probe
+        readinessProbe:
+          exec:
+            command:
+            - mongo
+            - --eval
+            - "db.adminCommand('ping').ok"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+          
+        # Startup Probe
+        startupProbe:
+          exec:
+            command:
+            - mongo
+            - --eval
+            - "db.adminCommand('ping').ok"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 30
+          
+        # Security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            add:
+            - CHOWN
+            - SETGID
+            - SETUID
+          drop:
+            - ALL
+          runAsUser: 999
+          runAsGroup: 999
+          
+        # Volume mounts
+        volumeMounts:
+        - name: mongodb-data
+          mountPath: /data/db
+        - name: mongodb-config
+          mountPath: /data/configdb
+        - name: mongodb-logs
+          mountPath: /var/log/mongodb
+          
+      # Sidecar container for backup
+      - name: mongodb-backup
+        image: mongo:7.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          echo "MongoDB backup sidecar started"
+          while true; do
+            echo "Creating backup at $(date)"
+            mongodump --host localhost --port 27017 --username $MONGO_INITDB_ROOT_USERNAME --password $MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --db chatapp --out /backup/backup-$(date +%Y%m%d-%H%M%S).gz --gzip
+            echo "Backup completed"
+            # Clean old backups (keep last 7 days)
+            find /backup -name "backup-*.gz" -mtime +7 -delete
+            sleep 86400  # Run daily
+          done
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: chat-app-secrets
+              key: mongodb-root-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chat-app-secrets
+              key: mongodb-root-password
+        volumeMounts:
+        - name: mongodb-backup
+          mountPath: /backup
+        - name: mongodb-data
+          mountPath: /data/db
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+            
+      # Init containers
+      initContainers:
+      - name: init-mongodb
+        image: mongo:7.0
+        command:
+        - sh
+        - -c
+        - |
+          echo "Initializing MongoDB replica set..."
+          until mongosh --host localhost --port 27017 --eval "db.adminCommand('ping').ok"; do
+            echo "Waiting for MongoDB to be ready..."
+            sleep 2
+          done
+          
+          # Initiate replica set if this is the first pod
+          if [ "${HOSTNAME##*-}" = "0" ]; then
+            echo "Initiating replica set..."
+            mongosh --host localhost --port 27017 --eval "
+              rs.initiate({
+                _id: 'mongodb-rs',
+                members: [
+                  { _id: 0, host: 'mongodb-0.mongodb-headless.chat-app.svc.cluster.local:27017' },
+                  { _id: 1, host: 'mongodb-1.mongodb-headless.chat-app.svc.cluster.local:27017' },
+                  { _id: 2, host: 'mongodb-2.mongodb-headless.chat-app.svc.cluster.local:27017' }
+                ]
+              })
+            "
+          fi
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        volumeMounts:
+        - name: mongodb-data
+          mountPath: /data/db
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+            
+  # Volume claim templates
+  volumeClaimTemplates:
+  - metadata:
+      name: mongodb-data
+      labels:
+        app: mongodb
+        component: database
+      annotations:
+        volume.beta.kubernetes.io/storage-class: "fast-ssd"
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "fast-ssd"
+      resources:
+        requests:
+          storage: 20Gi
+  - metadata:
+      name: mongodb-config
+      labels:
+        app: mongodb
+        component: database
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "fast-ssd"
+      resources:
+        requests:
+          storage: 5Gi
+  - metadata:
+      name: mongodb-logs
+      labels:
+        app: mongodb
+        component: database
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "fast-ssd"
+      resources:
+        requests:
+          storage: 10Gi
+        
+  # Pod management policy
+  podManagementPolicy: OrderedReady
+  
+  # Update strategy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      
+  # Service account
+  serviceAccountName: mongodb
+  
+  # Node selector and tolerations
+  nodeSelector:
+    kubernetes.io/os: linux
+    node-type: database
+    
+  tolerations:
+  - key: "node-role.kubernetes.io/master"
+    operator: "Exists"
+    effect: "NoSchedule"
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+    
+  # Affinity rules
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - mongodb
+          topologyKey: kubernetes.io/hostname
+      - weight: 50
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: component
+              operator: In
+              values:
+              - database
+          topologyKey: kubernetes.io/hostname
+    podAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 30
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: component
+              operator: In
+              values:
+              - backend
+          topologyKey: kubernetes.io/hostname
+          
+  # Termination grace period
+  terminationGracePeriodSeconds: 1800
+
+---
+# Persistent Volume Claims for backup storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-backup-pvc
+  namespace: chat-app
+  labels:
+    app: mongodb
+    component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "fast-ssd"
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+# Service Account for MongoDB
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mongodb
+  namespace: chat-app
+  annotations:
+    iam.amazonaws.com/role: "mongodb-role"
+automountServiceAccountToken: true
+
+---
+# Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongodb-netpol
+  namespace: chat-app
+  labels:
+    app: mongodb
+    component: database
+spec:
+  podSelector:
+    matchLabels:
+      app: mongodb
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: chat-app-backend
+    - podSelector:
+        matchLabels:
+          app: mongodb
+    ports:
+    - protocol: TCP
+      port: 27017
+    - protocol: TCP
+      port: 9216
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 4317
+    - protocol: TCP
+      port: 14250
+
+---
+# CronJob for automated backups
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongodb-backup-cronjob
+  namespace: chat-app
+  labels:
+    app: mongodb
+    component: backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: mongodb-backup
+            image: mongo:7.0
+            command:
+            - sh
+            - -c
+            - |
+              echo "Starting MongoDB backup..."
+              BACKUP_FILE="/backup/chatapp-backup-$(date +%Y%m%d-%H%M%S).gz"
+              mongodump --host mongodb-0.mongodb-headless.chat-app.svc.cluster.local \
+                        --port 27017 \
+                        --username $MONGO_INITDB_ROOT_USERNAME \
+                        --password $MONGO_INITDB_ROOT_PASSWORD \
+                        --authenticationDatabase admin \
+                        --db chatapp \
+                        --out $BACKUP_FILE \
+                        --gzip
+              
+              # Upload to S3 (if configured)
+              if [ -n "$AWS_S3_BUCKET" ]; then
+                aws s3 cp $BACKUP_FILE s3://$AWS_S3_BUCKET/mongodb-backups/
+                echo "Backup uploaded to S3: $BACKUP_FILE"
+              fi
+              
+              # Clean local backup
+              rm -f $BACKUP_FILE
+            env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: chat-app-secrets
+                  key: mongodb-root-username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: chat-app-secrets
+                  key: mongodb-root-password
+            - name: AWS_S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: chat-app-secrets
+                  key: aws-s3-bucket
+            volumeMounts:
+            - name: mongodb-backup
+              mountPath: /backup
+            resources:
+              requests:
+                cpu: 200m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          volumes:
+          - name: mongodb-backup
+            persistentVolumeClaim:
+              claimName: mongodb-backup-pvc
+          restartPolicy: OnFailure
+          backoffLimit: 3
+          activeDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
