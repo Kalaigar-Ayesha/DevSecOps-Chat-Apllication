@@ -1,0 +1,52 @@
+name: IaC Security Scan
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  iac-scan:
+    name: Trivy & Checkov IaC Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Trivy IaC Scanner (Terraform & Kubernetes/Helm)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402250b2376d921b447076 # v0.29.0
+        with:
+          scan-type: 'config'
+          hide-progress: true
+          format: 'sarif'
+          output: 'trivy-iac-results.sarif'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy IaC scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e8d4cfec7d4a5f3e806c0580d704bc564301b5d # v3.28.10
+        with:
+          sarif_file: 'trivy-iac-results.sarif'
+          category: 'trivy-iac'
+
+      - name: Run Checkov IaC Scanner
+        uses: bridgecrewio/checkov-action@12b489a2444f2fb92825b42d76a7183e8b4e727e # v12.2827.0
+        with:
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Upload Checkov scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e8d4cfec7d4a5f3e806c0580d704bc564301b5d # v3.28.10
+        with:
+          sarif_file: 'checkov-results.sarif'
+          category: 'checkov-iac'

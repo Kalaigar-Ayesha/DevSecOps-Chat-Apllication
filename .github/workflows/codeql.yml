@@ -1,0 +1,39 @@
+name: CodeQL SAST
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday scan
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: CodeQL Analysis (JS/TS)
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript-typescript' ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9e8d4cfec7d4a5f3e806c0580d704bc564301b5d # v3.28.10
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@9e8d4cfec7d4a5f3e806c0580d704bc564301b5d # v3.28.10
+        with:
+          category: "/language:${{ matrix.language }}"
