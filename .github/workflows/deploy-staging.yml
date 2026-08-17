@@ -99,3 +99,14 @@ jobs:
           git add Helm/values.yaml
           git commit -m "chore(gitops): update staging image tags to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
           git push origin staging
+
+  dast-scan:
+    name: Staging DAST Scan
+    needs: update-manifests
+    permissions:
+      contents: read
+      issues: write
+      checks: write
+    uses: ./.github/workflows/dast-scan.yml
+    with:
+      target_url: 'http://staging.chatapp.internal'
