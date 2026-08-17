@@ -5,6 +5,13 @@ on:
     branches:
       - staging
 
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  security-events: write
+  actions: read
+
 jobs:
   frontend-ci:
     uses: ./.github/workflows/frontend-ci.yml
@@ -14,6 +21,10 @@ jobs:
 
   build-frontend:
     needs: frontend-ci
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/docker-build.yml
     with:
       context: ./frontend
@@ -25,6 +36,10 @@ jobs:
 
   build-backend:
     needs: backend-ci
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/docker-build.yml
     with:
       context: ./backend
@@ -36,6 +51,10 @@ jobs:
 
   scan-frontend:
     needs: build-frontend
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     uses: ./.github/workflows/security-scan.yml
     with:
       image_name: kayesha01/chat-app-frontend
@@ -43,6 +62,10 @@ jobs:
 
   scan-backend:
     needs: build-backend
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     uses: ./.github/workflows/security-scan.yml
     with:
       image_name: kayesha01/chat-app-backend
