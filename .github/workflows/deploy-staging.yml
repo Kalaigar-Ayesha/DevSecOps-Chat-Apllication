@@ -53,6 +53,8 @@ jobs:
     needs: [scan-frontend, scan-backend]
     runs-on: ubuntu-latest
     environment: staging
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
