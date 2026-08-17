@@ -1,0 +1,26 @@
+# Falco Custom Security Rules for Chat App Runtime Monitoring
+customRules:
+  chat-app-rules.yaml: |-
+    - rule: Terminal Shell Spawned in Chat App Pod
+      desc: Detects interactive terminal shell spawned inside chat-app containers
+      condition: >
+        container.image.repository contains "chat-app" and
+        spawned_process and
+        proc.name in (bash, sh, zsh, ksh, csh)
+      output: >
+        NOTICE Shell spawned in chat-app pod (user=%user.name pod=%k8s.pod.name 
+        container=%container.name process=%proc.name image=%container.image.repository)
+      priority: WARNING
+      tags: [container, shell, mitre_execution]
+
+    - rule: Sensitive File Access in Container
+      desc: Detects attempt to read or modify sensitive system credentials/files
+      condition: >
+        open_write and
+        container and
+        fd.name startswith /etc/ or fd.name startswith /proc/kcore
+      output: >
+        CRITICAL Sensitive file write attempt in container (user=%user.name 
+        pod=%k8s.pod.name file=%fd.name process=%proc.name)
+      priority: CRITICAL
+      tags: [container, file_tampering, mitre_persistence]

@@ -1,0 +1,54 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-root-and-enforce-resources
+  annotations:
+    policies.kyverno.io/title: Disallow Root and Enforce Resource Limits
+    policies.kyverno.io/category: Pod Security Standards
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Enforces restricted pod security standards by blocking root containers, 
+      disallowing privilege escalation, and requiring explicit resource limits.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-non-root
+      match:
+        any:
+        - resources:
+            kinds:
+              - Pod
+      validate:
+        message: "Containers must run as non-root and disallow privilege escalation."
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+            containers:
+              - name: "*"
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+
+    - name: check-resource-limits
+      match:
+        any:
+        - resources:
+            kinds:
+              - Pod
+      validate:
+        message: "Resource CPU and Memory limits/requests must be specified."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                resources:
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
